@@ -185,14 +185,14 @@ jobs:
         retention-days: 30
 
     # Step 11: Deploy HTML Report to GitHub Pages (Optional)
-    - name: 🌐 Deploy to GitHub Pages
-      if: always() && github.ref == 'refs/heads/main'
-      uses: peaceiris/actions-gh-pages@v3
-      with:
-        github_token: ${{ secrets.GITHUB_TOKEN }}
-        publish_dir: ./html-report
-        destination_dir: reports/${{ github.run_number }}
-
+  #  - name: 🌐 Deploy to GitHub Pages
+  #    if: always() && github.ref == 'refs/heads/main'
+   #   uses: peaceiris/actions-gh-pages@v3
+  #    with:
+     #   github_token: ${{ secrets.GITHUB_TOKEN }}
+    #    publish_dir: ./html-report
+   #     destination_dir: reports/${{ github.run_number }}
+#
     # Step 12: Comment on PR with results (لو كان PR)
     - name: 💬 Comment Test Results on PR
       if: always() && github.event_name == 'pull_request'
