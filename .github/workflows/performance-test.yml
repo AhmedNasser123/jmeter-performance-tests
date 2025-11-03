@@ -78,10 +78,10 @@ jobs:
       shell: pwsh
       run: |
         $jmeterPath = "apache-jmeter-$env:JMETER_VERSION\bin\jmeter.bat"
-        
+
         Write-Host "🚀 Starting Performance Test..."
         Write-Host "Test Plan: $env:TEST_PLAN_PATH"
-        Write-Host "ReportPortal: $env:RP_ENDPOINT"
+       
         
         & $jmeterPath -n `
           -t $env:TEST_PLAN_PATH `
@@ -89,10 +89,7 @@ jobs:
           -e `
           -o html-report `
           -j jmeter.log `
-          -Jrp.endpoint=$env:RP_ENDPOINT `
-          -Jrp.uuid=${{ secrets.RP_TOKEN }} `
-          -Jrp.launch="JMeter_Run_${{ github.run_number }}" `
-          -Jrp.project=$env:RP_PROJECT
+          
         
         if ($LASTEXITCODE -eq 0) {
             Write-Host "✅ Test completed successfully!"
