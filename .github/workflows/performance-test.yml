@@ -12,7 +12,7 @@ on:
 
 env:
   JMETER_VERSION: '5.6.3'
-  TEST_PLAN_PATH: 'jmeter-performance-tests/google-test-.jmx'
+  TEST_PLAN_PATH: 'google-test-.jmx'
   RP_PROJECT: 'google-test-'
 
 jobs:
