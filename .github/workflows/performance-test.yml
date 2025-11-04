@@ -20,7 +20,7 @@ env:
   JMETER_VERSION: '5.6.3'
   TEST_PLAN_PATH: 'google-test-.jmx'
   RP_PROJECT: 'google-test-'
-  RECIPIENT_EMAIL: 'aahmeed.naabeel@gmail.com'  # ⚠️ غير الإيميل هنا
+  RECIPIENT_EMAIL: 'noursine.alqemam@gmail.com'  # ⚠️ غير الإيميل هنا
 
 jobs:
   performance-test:
@@ -93,6 +93,8 @@ jobs:
         
         # بناء الرابط الصحيح
         $reportUrl = "https://$repoOwner.github.io/$repoName/reports/run-$runNumber/"
+        $workflowUrl = "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+        $artifactUrl = "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}#artifacts"
         
         Write-Host "🔗 Report URL: $reportUrl"
         if (-not (Test-Path "results.jtl")) {
