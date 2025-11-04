@@ -14,7 +14,7 @@ env:
   JMETER_VERSION: '5.6.3'
   TEST_PLAN_PATH: 'google-test-.jmx'
   RP_PROJECT: 'google-test-'
-  RECIPIENT_EMAIL: 'aahmeed.naabeel@gmail.com'  # ⚠️ غير الإيميل هنا
+  RECIPIENT_EMAIL: 'aahmeed.naabeel@gmail.com'
 
 jobs:
   performance-test:
@@ -79,7 +79,9 @@ jobs:
       if: always()
       shell: pwsh
       run: |
-      
+        $artifactsUrl = "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}#artifacts"
+        $workflowUrl = "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+        
         if (-not (Test-Path "results.jtl")) {
             @"
         <!DOCTYPE html>
@@ -87,7 +89,7 @@ jobs:
         <body style="font-family: Arial, sans-serif; padding: 20px;">
           <h1 style="color: red;">❌ Test Failed</h1>
           <p>No results were generated. Please check the workflow logs.</p>
-          <a href="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" 
+          <a href="$workflowUrl" 
              style="display: inline-block; padding: 10px 20px; background: #2196F3; color: white; text-decoration: none; border-radius: 5px;">
             View Logs
           </a>
@@ -148,7 +150,9 @@ jobs:
             .metric-label { font-weight: bold; color: #666; }
             .metric-value { font-size: 18px; color: #333; font-weight: bold; }
             .footer { background: #f5f5f5; padding: 20px; text-align: center; color: #666; font-size: 12px; }
-            .link { display: inline-block; margin: 20px 0; padding: 12px 30px; background: #2196F3; color: white; text-decoration: none; border-radius: 5px; }
+            .link { display: inline-block; margin: 20px 10px; padding: 12px 30px; background: #2196F3; color: white; text-decoration: none; border-radius: 5px; font-weight: bold; }
+            .link:hover { background: #1976D2; }
+            .download-box { background: #E3F2FD; padding: 20px; border-radius: 8px; margin: 20px 0; border: 2px dashed #2196F3; }
           </style>
         </head>
         <body>
@@ -195,15 +199,21 @@ jobs:
                 <span class="metric-value">$maxTime ms</span>
               </div>
               
-              <div style="text-align: center;">
-                <a href="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" class="link">
-                  View Full Report & Download HTML
-                </a>
+              <div class="download-box">
+                <h3 style="margin-top: 0; color: #1976D2;">📥 Download Full Report</h3>
+                <p>Click the button below to download the complete HTML report with detailed graphs and statistics:</p>
+                <div style="text-align: center;">
+                  <a href="$artifactsUrl" class="link">
+                    📦 Download HTML Report
+                  </a>
+                  <a href="$workflowUrl" class="link">
+                    🔗 View Workflow
+                  </a>
+                </div>
+                <p style="font-size: 12px; color: #666; margin-bottom: 0;">
+                  <strong>Instructions:</strong> Click "Download HTML Report" → Download the "html-report" artifact → Extract ZIP → Open index.html
+                </p>
               </div>
-              
-              <p style="margin-top: 20px; padding: 15px; background: #E3F2FD; border-radius: 5px;">
-                <strong>📥 Note:</strong> The complete HTML report with detailed graphs and statistics is attached to this email as a ZIP file.
-              </p>
             </div>
             <div class="footer">
               <p><strong>Repository:</strong> ${{ github.repository }}</p>
@@ -227,17 +237,6 @@ jobs:
         Write-Host "Avg Response Time: $avgTime ms"
         Write-Host "================================"
 
-    - name: 📦 Zip HTML Report for Email
-      if: always()
-      shell: pwsh
-      run: |
-        if (Test-Path "html-report") {
-            Compress-Archive -Path "html-report\*" -DestinationPath "jmeter-report.zip" -Force
-            Write-Host "✅ HTML report zipped for email attachment"
-            $size = (Get-Item "jmeter-report.zip").Length / 1MB
-            Write-Host "Report size: $([math]::Round($size, 2)) MB"
-        }
-
     - name: 📧 Send Email Report
       if: always()
       uses: dawidd6/action-send-mail@v3
@@ -250,7 +249,6 @@ jobs:
         to: ${{ env.RECIPIENT_EMAIL }}
         from: JMeter Bot <${{ secrets.EMAIL_USERNAME }}>
         html_body: file://email-report.html
-        attachments: jmeter-report.zip
         priority: normal
 
     - name: 📦 Upload HTML Report (GitHub Artifacts)
@@ -279,3 +277,15 @@ jobs:
         path: jmeter.log
         retention-days: 30
         if-no-files-found: warn
+
+    - name: ✅ Print Summary
+      if: always()
+      shell: pwsh
+      run: |
+        Write-Host "================================"
+        Write-Host "✅ WORKFLOW COMPLETED"
+        Write-Host "================================"
+        Write-Host "📧 Email sent successfully"
+        Write-Host "📦 Reports uploaded to GitHub Artifacts"
+        Write-Host "🔗 Artifacts URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}#artifacts"
+        Write-Host "================================"
