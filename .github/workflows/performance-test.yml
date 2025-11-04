@@ -1,4 +1,4 @@
-name: JMeter Performance Test with Email Report
+name: JMeter Performance Test with Email Link
 
 on:
   push:
@@ -93,6 +93,7 @@ jobs:
         </body>
         </html>
         "@ | Out-File -FilePath "email-report.html" -Encoding utf8
+            "failed" | Out-File -FilePath "test-status.txt"
             exit 0
         }
         
@@ -107,6 +108,7 @@ jobs:
         </body>
         </html>
         "@ | Out-File -FilePath "email-report.html" -Encoding utf8
+            "no-results" | Out-File -FilePath "test-status.txt"
             exit 0
         }
         
@@ -132,7 +134,10 @@ jobs:
         $statusColor = if ($successRate -ge 95) { "#4CAF50" } elseif ($successRate -ge 80) { "#FF9800" } else { "#F44336" }
         $statusIcon = if ($successRate -ge 95) { "✅" } elseif ($successRate -ge 80) { "⚠️" } else { "❌" }
         
-        # Generate HTML email
+        # Save status
+        "success" | Out-File -FilePath "test-status.txt"
+        
+        # Generate HTML email with links
         @"
         <!DOCTYPE html>
         <html>
@@ -147,7 +152,11 @@ jobs:
             .metric-label { font-weight: bold; color: #666; }
             .metric-value { font-size: 18px; color: #333; font-weight: bold; }
             .footer { background: #f5f5f5; padding: 20px; text-align: center; color: #666; font-size: 12px; }
-            .link { display: inline-block; margin: 20px 0; padding: 12px 30px; background: #2196F3; color: white; text-decoration: none; border-radius: 5px; }
+            .link-button { display: inline-block; margin: 10px 5px; padding: 12px 25px; background: #2196F3; color: white; text-decoration: none; border-radius: 5px; font-weight: bold; }
+            .link-button:hover { background: #1976D2; }
+            .success-button { background: #4CAF50; }
+            .success-button:hover { background: #45a049; }
+            .alert-box { padding: 20px; background: #E3F2FD; border-left: 4px solid #2196F3; border-radius: 5px; margin: 20px 0; }
           </style>
         </head>
         <body>
@@ -157,7 +166,7 @@ jobs:
               <p>Run #${{ github.run_number }} - ${{ github.ref_name }}</p>
             </div>
             <div class="content">
-              <h2>📊 Test Results</h2>
+              <h2>📊 Test Results Summary</h2>
               
               <div class="metric">
                 <span class="metric-label">📝 Total Requests</span>
@@ -194,21 +203,34 @@ jobs:
                 <span class="metric-value">$maxTime ms</span>
               </div>
               
-              <div style="text-align: center;">
-                <a href="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" class="link">
-                  View Full Report & Download HTML
-                </a>
+              <div class="alert-box">
+                <h3 style="margin-top: 0;">📥 View Detailed Reports</h3>
+                <p>Click the buttons below to access the complete test reports:</p>
+                
+                <div style="text-align: center; margin-top: 20px;">
+                  <a href="https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/reports/run-${{ github.run_number }}/" class="link-button success-button">
+                    🌐 View HTML Report Online
+                  </a>
+                  <br>
+                  <a href="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" class="link-button">
+                    📦 Download Full Report (ZIP)
+                  </a>
+                </div>
+                
+                <p style="margin-top: 15px; font-size: 14px; color: #666;">
+                  <strong>Note:</strong> The HTML report contains detailed graphs, statistics, and all test results.
+                </p>
               </div>
-              
-              <p style="margin-top: 20px; padding: 15px; background: #E3F2FD; border-radius: 5px;">
-                <strong>📥 Note:</strong> The complete HTML report with detailed graphs and statistics is attached to this email as a ZIP file.
-              </p>
             </div>
             <div class="footer">
               <p><strong>Repository:</strong> ${{ github.repository }}</p>
               <p><strong>Branch:</strong> ${{ github.ref_name }}</p>
               <p><strong>Triggered by:</strong> ${{ github.actor }}</p>
               <p><strong>Commit:</strong> ${{ github.sha }}</p>
+              <hr style="border: 0; border-top: 1px solid #ddd; margin: 15px 0;">
+              <p style="font-size: 11px; color: #999;">
+                This is an automated email from JMeter Performance Testing Pipeline
+              </p>
             </div>
           </div>
         </body>
@@ -226,18 +248,16 @@ jobs:
         Write-Host "Avg Response Time: $avgTime ms"
         Write-Host "================================"
 
-    - name: 📦 Zip HTML Report for Email
-      if: always()
-      shell: pwsh
-      run: |
-        if (Test-Path "html-report") {
-            Compress-Archive -Path "html-report\*" -DestinationPath "jmeter-report.zip" -Force
-            Write-Host "✅ HTML report zipped for email attachment"
-            $size = (Get-Item "jmeter-report.zip").Length / 1MB
-            Write-Host "Report size: $([math]::Round($size, 2)) MB"
-        }
+    - name: 🌐 Deploy HTML Report to GitHub Pages
+      if: always() && github.ref == 'refs/heads/main'
+      uses: peaceiris/actions-gh-pages@v3
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        publish_dir: ./html-report
+        destination_dir: reports/run-${{ github.run_number }}
+        keep_files: true
 
-    - name: 📧 Send Email Report
+    - name: 📧 Send Email Report with Links
       if: always()
       uses: dawidd6/action-send-mail@v3
       with:
@@ -249,7 +269,6 @@ jobs:
         to: ${{ env.RECIPIENT_EMAIL }}
         from: JMeter Bot <${{ secrets.EMAIL_USERNAME }}>
         html_body: file://email-report.html
-        attachments: jmeter-report.zip
         priority: normal
 
     - name: 📦 Upload HTML Report (GitHub Artifacts)
