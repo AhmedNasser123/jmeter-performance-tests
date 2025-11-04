@@ -10,11 +10,17 @@ on:
       - main
   workflow_dispatch:
 
+# ✅ إضافة الصلاحيات هنا
+permissions:
+  contents: write  # للسماح بالكتابة على gh-pages
+  pages: write     # للسماح بنشر الصفحات
+  id-token: write  # للتوثيق
+
 env:
   JMETER_VERSION: '5.6.3'
   TEST_PLAN_PATH: 'google-test-.jmx'
   RP_PROJECT: 'google-test-'
-  RECIPIENT_EMAIL: 'aahmeed.naabeel@gmail.com'  # ⚠️ غير الإيميل هنا
+  RECIPIENT_EMAIL: 'recipient@example.com'  # ⚠️ غير الإيميل هنا
 
 jobs:
   performance-test:
@@ -256,6 +262,10 @@ jobs:
         publish_dir: ./html-report
         destination_dir: reports/run-${{ github.run_number }}
         keep_files: true
+        # ✅ إضافات للتأكد من عمل النشر
+        force_orphan: false
+        user_name: 'github-actions[bot]'
+        user_email: 'github-actions[bot]@users.noreply.github.com'
 
     - name: 📧 Send Email Report with Links
       if: always()
