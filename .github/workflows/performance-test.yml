@@ -20,7 +20,7 @@ env:
   JMETER_VERSION: '5.6.3'
   TEST_PLAN_PATH: 'google-test-.jmx'
   RP_PROJECT: 'google-test-'
-  RECIPIENT_EMAIL: 'aahmeed.naabeel@gmail.com'  # ⚠️ غير الإيميل هنا
+  RECIPIENT_EMAIL: 'recipient@example.com'  # ⚠️ غير الإيميل هنا
 
 jobs:
   performance-test:
@@ -85,6 +85,16 @@ jobs:
       if: always()
       shell: pwsh
       run: |
+        # استخراج اسم المستودع من github.repository
+        $repoFullName = "${{ github.repository }}"
+        $repoName = $repoFullName.Split('/')[1]
+        $repoOwner = "${{ github.repository_owner }}"
+        $runNumber = "${{ github.run_number }}"
+        
+        # بناء الرابط الصحيح
+        $reportUrl = "https://$repoOwner.github.io/$repoName/reports/run-$runNumber/"
+        
+        Write-Host "🔗 Report URL: $reportUrl"
         if (-not (Test-Path "results.jtl")) {
             @"
         <!DOCTYPE html>
@@ -214,7 +224,7 @@ jobs:
                 <p>Click the buttons below to access the complete test reports:</p>
                 
                 <div style="text-align: center; margin-top: 20px;">
-                  <a href="https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/reports/run-${{ github.run_number }}/" class="link-button success-button">
+                  <a href="$reportUrl" class="link-button success-button">
                     🌐 View HTML Report Online
                   </a>
                   <br>
@@ -266,6 +276,23 @@ jobs:
         force_orphan: false
         user_name: 'github-actions[bot]'
         user_email: 'github-actions[bot]@users.noreply.github.com'
+
+    - name: 🔗 Print Report URL
+      if: always() && github.ref == 'refs/heads/main'
+      shell: pwsh
+      run: |
+        $repoFullName = "${{ github.repository }}"
+        $repoName = $repoFullName.Split('/')[1]
+        $repoOwner = "${{ github.repository_owner }}"
+        $runNumber = "${{ github.run_number }}"
+        $reportUrl = "https://$repoOwner.github.io/$repoName/reports/run-$runNumber/"
+        
+        Write-Host "================================"
+        Write-Host "📊 REPORT PUBLISHED"
+        Write-Host "================================"
+        Write-Host "🔗 URL: $reportUrl"
+        Write-Host "⏳ Wait 1-2 minutes for GitHub Pages to update"
+        Write-Host "================================"
 
     - name: 📧 Send Email Report with Links
       if: always()
