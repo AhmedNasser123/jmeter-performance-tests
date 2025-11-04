@@ -14,7 +14,7 @@ env:
   JMETER_VERSION: '5.6.3'
   TEST_PLAN_PATH: 'google-test-.jmx'
   RP_PROJECT: 'google-test-'
-  RECIPIENT_EMAIL: 'aahmeed.naabeel@gmail.com'  # ⚠️ غير الإيميل هنا
+  RECIPIENT_EMAIL: 'recipient@example.com'
 
 jobs:
   performance-test:
@@ -79,7 +79,6 @@ jobs:
       if: always()
       shell: pwsh
       run: |
-        # بناء روابط الـ Artifacts والـ Workflow
         $workflowUrl = "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
         $artifactsUrl = "$workflowUrl#artifacts"
         
@@ -87,7 +86,7 @@ jobs:
         Write-Host "🔗 Artifacts URL: $artifactsUrl"
         
         if (-not (Test-Path "results.jtl")) {
-            @"
+            $htmlContent = @"
         <!DOCTYPE html>
         <html>
         <head>
@@ -106,14 +105,15 @@ jobs:
           </div>
         </body>
         </html>
-        "@ | Out-File -FilePath "email-report.html" -Encoding utf8
+"@
+            $htmlContent | Out-File -FilePath "email-report.html" -Encoding utf8
             "failed" | Out-File -FilePath "test-status.txt"
             exit 0
         }
         
         $content = Get-Content "results.jtl"
         if ($content.Count -le 1) {
-            @"
+            $htmlContent = @"
         <!DOCTYPE html>
         <html>
         <head>
@@ -129,38 +129,60 @@ jobs:
           </div>
         </body>
         </html>
-        "@ | Out-File -FilePath "email-report.html" -Encoding utf8
+"@
+            $htmlContent | Out-File -FilePath "email-report.html" -Encoding utf8
             "no-results" | Out-File -FilePath "test-status.txt"
             exit 0
         }
         
-        # Calculate metrics
         $totalSamples = $content.Count - 1
-        $results = $content | Select-Object -Skip 1 | ForEach-Object {
-            $fields = $_ -split ','
-            if ($fields.Count -ge 8) {
-                [PSCustomObject]@{
-                    Success = ($fields[7] -eq 'true')
-                    ResponseTime = if ($fields[1] -and $fields[1] -match '^\d+
+        $successful = 0
+        $failed = 0
+        $responseTimes = @()
         
-        $successful = ($results | Where-Object { $_.Success -eq $true }).Count
-        $failed = ($results | Where-Object { $_.Success -eq $false }).Count
+        for ($i = 1; $i -lt $content.Count; $i++) {
+            $fields = $content[$i] -split ','
+            if ($fields.Count -ge 8) {
+                if ($fields[7] -eq 'true') {
+                    $successful++
+                } else {
+                    $failed++
+                }
+                
+                if ($fields[1] -match '^\d+$') {
+                    $responseTimes += [int]$fields[1]
+                }
+            }
+        }
         
         if ($totalSamples -eq 0) { $totalSamples = 1 }
         
         $successRate = [math]::Round(($successful / $totalSamples) * 100, 2)
-        $avgTime = if ($results.Count -gt 0) { [math]::Round(($results | Measure-Object -Property ResponseTime -Average).Average, 2) } else { 0 }
-        $maxTime = if ($results.Count -gt 0) { ($results | Measure-Object -Property ResponseTime -Maximum).Maximum } else { 0 }
-        $minTime = if ($results.Count -gt 0) { ($results | Measure-Object -Property ResponseTime -Minimum).Minimum } else { 0 }
         
-        $statusColor = if ($successRate -ge 95) { "#4CAF50" } elseif ($successRate -ge 80) { "#FF9800" } else { "#F44336" }
-        $statusIcon = if ($successRate -ge 95) { "✅" } elseif ($successRate -ge 80) { "⚠️" } else { "❌" }
+        if ($responseTimes.Count -gt 0) {
+            $avgTime = [math]::Round(($responseTimes | Measure-Object -Average).Average, 2)
+            $maxTime = ($responseTimes | Measure-Object -Maximum).Maximum
+            $minTime = ($responseTimes | Measure-Object -Minimum).Minimum
+        } else {
+            $avgTime = 0
+            $maxTime = 0
+            $minTime = 0
+        }
         
-        # Save status
+        if ($successRate -ge 95) {
+            $statusColor = "#4CAF50"
+            $statusIcon = "✅"
+        } elseif ($successRate -ge 80) {
+            $statusColor = "#FF9800"
+            $statusIcon = "⚠️"
+        } else {
+            $statusColor = "#F44336"
+            $statusIcon = "❌"
+        }
+        
         "success" | Out-File -FilePath "test-status.txt"
         
-        # Generate HTML email with Artifacts link
-        @"
+        $htmlContent = @"
         <!DOCTYPE html>
         <html>
         <head>
@@ -294,231 +316,9 @@ jobs:
           </div>
         </body>
         </html>
-        "@ | Out-File -FilePath "email-report.html" -Encoding utf8
+"@
         
-        Write-Host "✅ Email report generated"
-        Write-Host "================================"
-        Write-Host "📊 TEST SUMMARY"
-        Write-Host "================================"
-        Write-Host "Total Requests: $totalSamples"
-        Write-Host "Successful: $successful"
-        Write-Host "Failed: $failed"
-        Write-Host "Success Rate: $successRate%"
-        Write-Host "Avg Response Time: $avgTime ms"
-        Write-Host "================================"
-
-    - name: 📧 Send Email Report with Artifacts Link
-      if: always()
-      uses: dawidd6/action-send-mail@v3
-      with:
-        server_address: smtp.gmail.com
-        server_port: 587
-        username: ${{ secrets.EMAIL_USERNAME }}
-        password: ${{ secrets.EMAIL_PASSWORD }}
-        subject: "${{ env.RP_PROJECT }} Performance Test - Run #${{ github.run_number }}"
-        to: ${{ env.RECIPIENT_EMAIL }}
-        from: JMeter Bot <${{ secrets.EMAIL_USERNAME }}>
-        html_body: file://email-report.html
-        priority: normal
-        ignore_cert: true
-        convert_markdown: false
-
-    - name: 📦 Upload HTML Report
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: html-report
-        path: html-report/
-        retention-days: 30
-        if-no-files-found: warn
-
-    - name: 📦 Upload JTL Results
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: jtl-results
-        path: results.jtl
-        retention-days: 30
-        if-no-files-found: warn
-
-    - name: 📦 Upload JMeter Logs
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: jmeter-logs
-        path: jmeter.log
-        retention-days: 30
-        if-no-files-found: warn
-
-    - name: ✅ Print Summary
-      if: always()
-      shell: pwsh
-      run: |
-        $workflowUrl = "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-        $artifactsUrl = "$workflowUrl#artifacts"
-        
-        Write-Host "================================"
-        Write-Host "📧 EMAIL SENT SUCCESSFULLY"
-        Write-Host "================================"
-        Write-Host "🔗 Artifacts URL: $artifactsUrl"
-        Write-Host "🔗 Workflow URL: $workflowUrl"
-        Write-Host ""
-        Write-Host "📦 Recipients will receive:"
-        Write-Host "  - Test summary with metrics"
-        Write-Host "  - Direct link to download artifacts"
-        Write-Host "  - Instructions for viewing reports"
-        Write-Host "================================"
-
-        
-        $successful = ($results | Where-Object { $_.Success }).Count
-        $failed = ($results | Where-Object { -not $_.Success }).Count
-        $successRate = [math]::Round(($successful/$totalSamples)*100, 2)
-        $avgTime = [math]::Round(($results | Measure-Object -Property ResponseTime -Average).Average, 2)
-        $maxTime = ($results | Measure-Object -Property ResponseTime -Maximum).Maximum
-        $minTime = ($results | Measure-Object -Property ResponseTime -Minimum).Minimum
-        
-        $statusColor = if ($successRate -ge 95) { "#4CAF50" } elseif ($successRate -ge 80) { "#FF9800" } else { "#F44336" }
-        $statusIcon = if ($successRate -ge 95) { "✅" } elseif ($successRate -ge 80) { "⚠️" } else { "❌" }
-        
-        # Save status
-        "success" | Out-File -FilePath "test-status.txt"
-        
-        # Generate HTML email with Artifacts link
-        @"
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <style>
-            body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 0; background: #f5f5f5; }
-            .container { max-width: 650px; margin: 20px auto; background: white; border-radius: 10px; overflow: hidden; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-            .header { background: $statusColor; color: white; padding: 30px; text-align: center; }
-            .header h1 { margin: 0; font-size: 28px; }
-            .content { padding: 30px; }
-            .metric { display: flex; justify-content: space-between; padding: 15px; margin: 10px 0; background: #f9f9f9; border-radius: 5px; border-left: 4px solid $statusColor; }
-            .metric-label { font-weight: bold; color: #666; }
-            .metric-value { font-size: 18px; color: #333; font-weight: bold; }
-            .download-section { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; border-radius: 10px; text-align: center; margin: 25px 0; color: white; }
-            .download-section h2 { margin-top: 0; font-size: 24px; }
-            .main-button { display: inline-block; padding: 18px 40px; background: white; color: #667eea; text-decoration: none; border-radius: 50px; font-weight: bold; font-size: 18px; margin: 15px 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); transition: transform 0.2s; }
-            .main-button:hover { transform: scale(1.05); }
-            .secondary-button { display: inline-block; padding: 12px 25px; background: rgba(255,255,255,0.2); color: white; text-decoration: none; border-radius: 25px; font-weight: bold; margin: 5px; border: 2px solid white; }
-            .secondary-button:hover { background: rgba(255,255,255,0.3); }
-            .instructions { background: #e8eaf6; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #3f51b5; }
-            .instructions ol { margin: 10px 0; padding-left: 20px; }
-            .instructions li { margin: 8px 0; line-height: 1.6; }
-            .footer { background: #f5f5f5; padding: 20px; text-align: center; color: #666; font-size: 12px; }
-            .artifact-preview { background: #f8f9fa; padding: 20px; border-radius: 8px; margin: 15px 0; border: 2px dashed #dee2e6; }
-            .artifact-item { display: flex; align-items: center; padding: 10px; margin: 8px 0; background: white; border-radius: 5px; }
-            .artifact-icon { font-size: 24px; margin-right: 15px; }
-            .artifact-name { font-weight: bold; color: #495057; }
-            .artifact-size { color: #6c757d; font-size: 14px; margin-left: auto; }
-          </style>
-        </head>
-        <body>
-          <div class="container">
-            <div class="header">
-              <h1>$statusIcon Performance Test Report</h1>
-              <p style="margin: 10px 0 0 0; font-size: 16px;">Run #${{ github.run_number }} - ${{ github.ref_name }}</p>
-            </div>
-            
-            <div class="content">
-              <h2 style="color: #333; border-bottom: 2px solid #e0e0e0; padding-bottom: 10px;">📊 Test Results Summary</h2>
-              
-              <div class="metric">
-                <span class="metric-label">📝 Total Requests</span>
-                <span class="metric-value">$totalSamples</span>
-              </div>
-              
-              <div class="metric">
-                <span class="metric-label">✅ Successful</span>
-                <span class="metric-value">$successful</span>
-              </div>
-              
-              <div class="metric">
-                <span class="metric-label">❌ Failed</span>
-                <span class="metric-value">$failed</span>
-              </div>
-              
-              <div class="metric">
-                <span class="metric-label">📈 Success Rate</span>
-                <span class="metric-value" style="color: $statusColor;">$successRate%</span>
-              </div>
-              
-              <div class="metric">
-                <span class="metric-label">⏱️ Avg Response Time</span>
-                <span class="metric-value">$avgTime ms</span>
-              </div>
-              
-              <div class="metric">
-                <span class="metric-label">⚡ Min Response Time</span>
-                <span class="metric-value">$minTime ms</span>
-              </div>
-              
-              <div class="metric">
-                <span class="metric-label">🔥 Max Response Time</span>
-                <span class="metric-value">$maxTime ms</span>
-              </div>
-              
-              <div class="download-section">
-                <h2>📦 Download Complete Report</h2>
-                <p style="font-size: 16px; margin: 15px 0;">Click below to access all test artifacts and detailed HTML reports</p>
-                
-                <a href="$artifactsUrl" class="main-button">
-                  📥 View & Download Reports
-                </a>
-                
-                <div style="margin-top: 20px;">
-                  <a href="$workflowUrl" class="secondary-button">
-                    📋 View Workflow Details
-                  </a>
-                </div>
-              </div>
-              
-              <div class="instructions">
-                <h3 style="margin-top: 0; color: #3f51b5;">📖 How to Download Reports:</h3>
-                <ol>
-                  <li>Click the <strong>"View & Download Reports"</strong> button above</li>
-                  <li>Scroll down to the <strong>"Artifacts"</strong> section</li>
-                  <li>Download <strong>"html-report"</strong> (contains full interactive dashboard)</li>
-                  <li>Extract the ZIP file and open <strong>index.html</strong> in your browser</li>
-                </ol>
-              </div>
-              
-              <div class="artifact-preview">
-                <h3 style="margin-top: 0; color: #495057;">📂 Available Artifacts:</h3>
-                <div class="artifact-item">
-                  <span class="artifact-icon">📊</span>
-                  <span class="artifact-name">html-report</span>
-                  <span class="artifact-size">~1.1 MB</span>
-                </div>
-                <div class="artifact-item">
-                  <span class="artifact-icon">📄</span>
-                  <span class="artifact-name">jtl-results</span>
-                  <span class="artifact-size">~2.5 KB</span>
-                </div>
-                <div class="artifact-item">
-                  <span class="artifact-icon">📝</span>
-                  <span class="artifact-name">jmeter-logs</span>
-                  <span class="artifact-size">~4.9 KB</span>
-                </div>
-              </div>
-            </div>
-            
-            <div class="footer">
-              <p><strong>Repository:</strong> ${{ github.repository }}</p>
-              <p><strong>Branch:</strong> ${{ github.ref_name }}</p>
-              <p><strong>Triggered by:</strong> ${{ github.actor }}</p>
-              <p><strong>Commit:</strong> ${{ github.sha }}</p>
-              <hr style="border: 0; border-top: 1px solid #ddd; margin: 15px 0;">
-              <p style="font-size: 11px; color: #999;">
-                This is an automated email from JMeter Performance Testing Pipeline<br>
-                Reports are retained for 30 days
-              </p>
-            </div>
-          </div>
-        </body>
-        </html>
-        "@ | Out-File -FilePath "email-report.html" -Encoding utf8
+        $htmlContent | Out-File -FilePath "email-report.html" -Encoding utf8
         
         Write-Host "✅ Email report generated"
         Write-Host "================================"
