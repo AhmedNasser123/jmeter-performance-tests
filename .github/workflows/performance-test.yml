@@ -10,17 +10,11 @@ on:
       - main
   workflow_dispatch:
 
-# ✅ إضافة الصلاحيات هنا
-permissions:
-  contents: write  # للسماح بالكتابة على gh-pages
-  pages: write     # للسماح بنشر الصفحات
-  id-token: write  # للتوثيق
-
 env:
   JMETER_VERSION: '5.6.3'
   TEST_PLAN_PATH: 'google-test-.jmx'
   RP_PROJECT: 'google-test-'
-  RECIPIENT_EMAIL: 'noursine.alqemam@gmail.com'  # ⚠️ غير الإيميل هنا
+  RECIPIENT_EMAIL: 'aahmeed.naabeel@gmail.com'  # ⚠️ غير الإيميل هنا
 
 jobs:
   performance-test:
@@ -85,29 +79,31 @@ jobs:
       if: always()
       shell: pwsh
       run: |
-        # استخراج اسم المستودع من github.repository
-        $repoFullName = "${{ github.repository }}"
-        $repoName = $repoFullName.Split('/')[1]
-        $repoOwner = "${{ github.repository_owner }}"
-        $runNumber = "${{ github.run_number }}"
-        
-        # بناء الرابط الصحيح
-        $reportUrl = "https://$repoOwner.github.io/$repoName/reports/run-$runNumber/"
+        # بناء روابط الـ Artifacts والـ Workflow
         $workflowUrl = "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-        $artifactUrl = "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}#artifacts"
+        $artifactsUrl = "$workflowUrl#artifacts"
         
-        Write-Host "🔗 Report URL: $reportUrl"
+        Write-Host "🔗 Workflow URL: $workflowUrl"
+        Write-Host "🔗 Artifacts URL: $artifactsUrl"
+        
         if (-not (Test-Path "results.jtl")) {
             @"
         <!DOCTYPE html>
         <html>
-        <body style="font-family: Arial, sans-serif; padding: 20px;">
-          <h1 style="color: red;">❌ Test Failed</h1>
-          <p>No results were generated. Please check the workflow logs.</p>
-          <a href="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" 
-             style="display: inline-block; padding: 10px 20px; background: #2196F3; color: white; text-decoration: none; border-radius: 5px;">
-            View Logs
-          </a>
+        <head>
+          <style>
+            body { font-family: Arial, sans-serif; padding: 20px; background: #f5f5f5; }
+            .container { max-width: 600px; margin: 0 auto; background: white; border-radius: 10px; padding: 30px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+            .link-button { display: inline-block; margin: 10px 5px; padding: 12px 25px; background: #2196F3; color: white; text-decoration: none; border-radius: 5px; font-weight: bold; }
+            .link-button:hover { background: #1976D2; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <h1 style="color: red;">❌ Test Failed</h1>
+            <p>No results were generated. Please check the workflow logs.</p>
+            <a href="$workflowUrl" class="link-button">View Logs</a>
+          </div>
         </body>
         </html>
         "@ | Out-File -FilePath "email-report.html" -Encoding utf8
@@ -120,9 +116,17 @@ jobs:
             @"
         <!DOCTYPE html>
         <html>
-        <body style="font-family: Arial, sans-serif; padding: 20px;">
-          <h1 style="color: orange;">⚠️ No Results</h1>
-          <p>Test ran but produced no results.</p>
+        <head>
+          <style>
+            body { font-family: Arial, sans-serif; padding: 20px; background: #f5f5f5; }
+            .container { max-width: 600px; margin: 0 auto; background: white; border-radius: 10px; padding: 30px; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <h1 style="color: orange;">⚠️ No Results</h1>
+            <p>Test ran but produced no results.</p>
+          </div>
         </body>
         </html>
         "@ | Out-File -FilePath "email-report.html" -Encoding utf8
@@ -137,202 +141,4 @@ jobs:
             if ($fields.Count -ge 8) {
                 [PSCustomObject]@{
                     Success = $fields[7] -eq 'true'
-                    ResponseTime = if ($fields[1]) { [int]$fields[1] } else { 0 }
-                }
-            }
-        }
-        
-        $successful = ($results | Where-Object { $_.Success }).Count
-        $failed = ($results | Where-Object { -not $_.Success }).Count
-        $successRate = [math]::Round(($successful/$totalSamples)*100, 2)
-        $avgTime = [math]::Round(($results | Measure-Object -Property ResponseTime -Average).Average, 2)
-        $maxTime = ($results | Measure-Object -Property ResponseTime -Maximum).Maximum
-        $minTime = ($results | Measure-Object -Property ResponseTime -Minimum).Minimum
-        
-        $statusColor = if ($successRate -ge 95) { "#4CAF50" } elseif ($successRate -ge 80) { "#FF9800" } else { "#F44336" }
-        $statusIcon = if ($successRate -ge 95) { "✅" } elseif ($successRate -ge 80) { "⚠️" } else { "❌" }
-        
-        # Save status
-        "success" | Out-File -FilePath "test-status.txt"
-        
-        # Generate HTML email with links
-        @"
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <style>
-            body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 0; background: #f5f5f5; }
-            .container { max-width: 600px; margin: 20px auto; background: white; border-radius: 10px; overflow: hidden; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-            .header { background: $statusColor; color: white; padding: 30px; text-align: center; }
-            .header h1 { margin: 0; font-size: 28px; }
-            .content { padding: 30px; }
-            .metric { display: flex; justify-content: space-between; padding: 15px; margin: 10px 0; background: #f9f9f9; border-radius: 5px; border-left: 4px solid $statusColor; }
-            .metric-label { font-weight: bold; color: #666; }
-            .metric-value { font-size: 18px; color: #333; font-weight: bold; }
-            .footer { background: #f5f5f5; padding: 20px; text-align: center; color: #666; font-size: 12px; }
-            .link-button { display: inline-block; margin: 10px 5px; padding: 12px 25px; background: #2196F3; color: white; text-decoration: none; border-radius: 5px; font-weight: bold; }
-            .link-button:hover { background: #1976D2; }
-            .success-button { background: #4CAF50; }
-            .success-button:hover { background: #45a049; }
-            .alert-box { padding: 20px; background: #E3F2FD; border-left: 4px solid #2196F3; border-radius: 5px; margin: 20px 0; }
-          </style>
-        </head>
-        <body>
-          <div class="container">
-            <div class="header">
-              <h1>$statusIcon Performance Test Report</h1>
-              <p>Run #${{ github.run_number }} - ${{ github.ref_name }}</p>
-            </div>
-            <div class="content">
-              <h2>📊 Test Results Summary</h2>
-              
-              <div class="metric">
-                <span class="metric-label">📝 Total Requests</span>
-                <span class="metric-value">$totalSamples</span>
-              </div>
-              
-              <div class="metric">
-                <span class="metric-label">✅ Successful</span>
-                <span class="metric-value">$successful</span>
-              </div>
-              
-              <div class="metric">
-                <span class="metric-label">❌ Failed</span>
-                <span class="metric-value">$failed</span>
-              </div>
-              
-              <div class="metric">
-                <span class="metric-label">📈 Success Rate</span>
-                <span class="metric-value" style="color: $statusColor;">$successRate%</span>
-              </div>
-              
-              <div class="metric">
-                <span class="metric-label">⏱️ Avg Response Time</span>
-                <span class="metric-value">$avgTime ms</span>
-              </div>
-              
-              <div class="metric">
-                <span class="metric-label">⚡ Min Response Time</span>
-                <span class="metric-value">$minTime ms</span>
-              </div>
-              
-              <div class="metric">
-                <span class="metric-label">🔥 Max Response Time</span>
-                <span class="metric-value">$maxTime ms</span>
-              </div>
-              
-              <div class="alert-box">
-                <h3 style="margin-top: 0;">📥 View Detailed Reports</h3>
-                <p>Click the buttons below to access the complete test reports:</p>
-                
-                <div style="text-align: center; margin-top: 20px;">
-                  <a href="$reportUrl" class="link-button success-button">
-                    🌐 View HTML Report Online
-                  </a>
-                  <br>
-                  <a href="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" class="link-button">
-                    📦 Download Full Report (ZIP)
-                  </a>
-                </div>
-                
-                <p style="margin-top: 15px; font-size: 14px; color: #666;">
-                  <strong>Note:</strong> The HTML report contains detailed graphs, statistics, and all test results.
-                </p>
-              </div>
-            </div>
-            <div class="footer">
-              <p><strong>Repository:</strong> ${{ github.repository }}</p>
-              <p><strong>Branch:</strong> ${{ github.ref_name }}</p>
-              <p><strong>Triggered by:</strong> ${{ github.actor }}</p>
-              <p><strong>Commit:</strong> ${{ github.sha }}</p>
-              <hr style="border: 0; border-top: 1px solid #ddd; margin: 15px 0;">
-              <p style="font-size: 11px; color: #999;">
-                This is an automated email from JMeter Performance Testing Pipeline
-              </p>
-            </div>
-          </div>
-        </body>
-        </html>
-        "@ | Out-File -FilePath "email-report.html" -Encoding utf8
-        
-        Write-Host "✅ Email report generated"
-        Write-Host "================================"
-        Write-Host "📊 TEST SUMMARY"
-        Write-Host "================================"
-        Write-Host "Total Requests: $totalSamples"
-        Write-Host "Successful: $successful"
-        Write-Host "Failed: $failed"
-        Write-Host "Success Rate: $successRate%"
-        Write-Host "Avg Response Time: $avgTime ms"
-        Write-Host "================================"
-
-    - name: 🌐 Deploy HTML Report to GitHub Pages
-      if: always() && github.ref == 'refs/heads/main'
-      uses: peaceiris/actions-gh-pages@v3
-      with:
-        github_token: ${{ secrets.GITHUB_TOKEN }}
-        publish_dir: ./html-report
-        destination_dir: reports/run-${{ github.run_number }}
-        keep_files: true
-        # ✅ إضافات للتأكد من عمل النشر
-        force_orphan: false
-        user_name: 'github-actions[bot]'
-        user_email: 'github-actions[bot]@users.noreply.github.com'
-
-    - name: 🔗 Print Report URL
-      if: always() && github.ref == 'refs/heads/main'
-      shell: pwsh
-      run: |
-        $repoFullName = "${{ github.repository }}"
-        $repoName = $repoFullName.Split('/')[1]
-        $repoOwner = "${{ github.repository_owner }}"
-        $runNumber = "${{ github.run_number }}"
-        $reportUrl = "https://$repoOwner.github.io/$repoName/reports/run-$runNumber/"
-        
-        Write-Host "================================"
-        Write-Host "📊 REPORT PUBLISHED"
-        Write-Host "================================"
-        Write-Host "🔗 URL: $reportUrl"
-        Write-Host "⏳ Wait 1-2 minutes for GitHub Pages to update"
-        Write-Host "================================"
-
-    - name: 📧 Send Email Report with Links
-      if: always()
-      uses: dawidd6/action-send-mail@v3
-      with:
-        server_address: smtp.gmail.com
-        server_port: 587
-        username: ${{ secrets.EMAIL_USERNAME }}
-        password: ${{ secrets.EMAIL_PASSWORD }}
-        subject: "${{ env.RP_PROJECT }} Performance Test - Run #${{ github.run_number }}"
-        to: ${{ env.RECIPIENT_EMAIL }}
-        from: JMeter Bot <${{ secrets.EMAIL_USERNAME }}>
-        html_body: file://email-report.html
-        priority: normal
-
-    - name: 📦 Upload HTML Report (GitHub Artifacts)
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: html-report
-        path: html-report/
-        retention-days: 30
-        if-no-files-found: warn
-
-    - name: 📦 Upload JTL Results
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: jtl-results
-        path: results.jtl
-        retention-days: 30
-        if-no-files-found: warn
-
-    - name: 📦 Upload JMeter Logs
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: jmeter-logs
-        path: jmeter.log
-        retention-days: 30
-        if-no-files-found: warn
+                    ResponseTime = if ($fields[1]) { [int]$fields[1] } els
