@@ -105,7 +105,7 @@ jobs:
           </div>
         </body>
         </html>
-"@
+
             $htmlContent | Out-File -FilePath "email-report.html" -Encoding utf8
             "failed" | Out-File -FilePath "test-status.txt"
             exit 0
@@ -129,7 +129,7 @@ jobs:
           </div>
         </body>
         </html>
-"@
+
             $htmlContent | Out-File -FilePath "email-report.html" -Encoding utf8
             "no-results" | Out-File -FilePath "test-status.txt"
             exit 0
@@ -316,7 +316,6 @@ jobs:
           </div>
         </body>
         </html>
-"@
         
         $htmlContent | Out-File -FilePath "email-report.html" -Encoding utf8
         
