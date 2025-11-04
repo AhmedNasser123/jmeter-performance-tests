@@ -368,10 +368,7 @@ jobs:
         Write-Host "  - Direct link to download artifacts"
         Write-Host "  - Instructions for viewing reports"
         Write-Host "================================"
-) { [int]$fields[1] } else { 0 }
-                }
-            }
-        } | Where-Object { $_ -ne $null }
+
         
         $successful = ($results | Where-Object { $_.Success }).Count
         $failed = ($results | Where-Object { -not $_.Success }).Count
