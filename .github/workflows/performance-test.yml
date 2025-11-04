@@ -20,7 +20,7 @@ env:
   JMETER_VERSION: '5.6.3'
   TEST_PLAN_PATH: 'google-test-.jmx'
   RP_PROJECT: 'google-test-'
-  RECIPIENT_EMAIL: 'recipient@example.com'  # ⚠️ غير الإيميل هنا
+  RECIPIENT_EMAIL: 'aahmeed.naabeel@gmail.com'  # ⚠️ غير الإيميل هنا
 
 jobs:
   performance-test:
