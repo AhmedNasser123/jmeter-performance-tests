@@ -1,4 +1,4 @@
-name: JMeter Performance Test
+name: JMeter Performance Test with Email Report
 
 on:
   push:
@@ -8,13 +8,13 @@ on:
   pull_request:
     branches:
       - main
-      
   workflow_dispatch:
 
 env:
   JMETER_VERSION: '5.6.3'
   TEST_PLAN_PATH: 'google-test-.jmx'
   RP_PROJECT: 'google-test-'
+  RECIPIENT_EMAIL: 'aahmeed.naabeel@gmail.com'  # ⚠️ غير الإيميل هنا
 
 jobs:
   performance-test:
@@ -23,19 +23,6 @@ jobs:
     steps:
     - name: 📥 Checkout Repository
       uses: actions/checkout@v4
-
-    - name: 🔍 List Repository Files
-      shell: pwsh
-      run: |
-        Write-Host "📂 Repository Structure:"
-        Get-ChildItem -Recurse | Select-Object FullName
-        Write-Host "`n🎯 Looking for test plan at: $env:TEST_PLAN_PATH"
-        if (Test-Path $env:TEST_PLAN_PATH) {
-            Write-Host "✅ Test plan found!"
-        } else {
-            Write-Host "❌ Test plan NOT found!"
-            Write-Host "Current directory: $(Get-Location)"
-        }
 
     - name: ☕ Setup Java 11
       uses: actions/setup-java@v4
@@ -64,18 +51,6 @@ jobs:
         
         Write-Host "✅ JMeter ready!"
 
-    - name: 🔍 Verify JMeter Installation
-      shell: pwsh
-      run: |
-        $jmeterPath = "apache-jmeter-$env:JMETER_VERSION\bin\jmeter.bat"
-        if (Test-Path $jmeterPath) {
-            Write-Host "✅ JMeter executable found at: $jmeterPath"
-        } else {
-            Write-Host "❌ JMeter executable NOT found!"
-            Write-Host "Looking in:"
-            Get-ChildItem apache-jmeter-* -Recurse -Filter "jmeter.bat" | Select-Object FullName
-        }
-
     - name: 🧪 Run JMeter Performance Test
       shell: pwsh
       run: |
@@ -83,69 +58,60 @@ jobs:
         $testPlan = $env:TEST_PLAN_PATH
         
         Write-Host "🚀 Starting Performance Test..."
-        Write-Host "JMeter Path: $jmeterPath"
         Write-Host "Test Plan: $testPlan"
-        Write-Host "Current Directory: $(Get-Location)"
         
-        # تأكد إن الملف موجود
         if (-not (Test-Path $testPlan)) {
-            Write-Host "❌ ERROR: Test plan file not found at: $testPlan"
-            Write-Host "Available files:"
-            Get-ChildItem -Recurse *.jmx | Select-Object FullName
+            Write-Host "❌ ERROR: Test plan not found at: $testPlan"
             exit 1
         }
         
-        # تشغيل JMeter
-        Write-Host "`n▶️ Executing JMeter..."
         & $jmeterPath -n -t $testPlan -l results.jtl -e -o html-report -j jmeter.log
         
-        $exitCode = $LASTEXITCODE
-        Write-Host "`nJMeter Exit Code: $exitCode"
-        
-        # عرض آخر 50 سطر من الـ log
-        if (Test-Path "jmeter.log") {
-            Write-Host "`n📋 JMeter Log (Last 50 lines):"
-            Get-Content "jmeter.log" -Tail 50
-        }
-        
-        # تحقق من إنشاء الملفات
-        Write-Host "`n📁 Checking output files..."
         if (Test-Path "results.jtl") {
-            $lines = (Get-Content "results.jtl").Count
-            Write-Host "✅ results.jtl created ($lines lines)"
-        } else {
-            Write-Host "❌ results.jtl NOT created"
+            Write-Host "✅ Results file created"
         }
         
         if (Test-Path "html-report\index.html") {
             Write-Host "✅ HTML report created"
-        } else {
-            Write-Host "❌ HTML report NOT created"
         }
-        
-        if ($exitCode -ne 0) {
-            Write-Host "⚠️ JMeter completed with errors (exit code: $exitCode)"
-            exit 1
-        }
-      continue-on-error: false
 
-    - name: 📊 Generate Test Summary
+    - name: 📊 Generate Test Summary & Email Content
       if: always()
       shell: pwsh
       run: |
         if (-not (Test-Path "results.jtl")) {
-            Write-Host "❌ No results file found - skipping summary"
+            @"
+        <!DOCTYPE html>
+        <html>
+        <body style="font-family: Arial, sans-serif; padding: 20px;">
+          <h1 style="color: red;">❌ Test Failed</h1>
+          <p>No results were generated. Please check the workflow logs.</p>
+          <a href="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" 
+             style="display: inline-block; padding: 10px 20px; background: #2196F3; color: white; text-decoration: none; border-radius: 5px;">
+            View Logs
+          </a>
+        </body>
+        </html>
+        "@ | Out-File -FilePath "email-report.html" -Encoding utf8
             exit 0
         }
         
         $content = Get-Content "results.jtl"
         if ($content.Count -le 1) {
-            Write-Host "⚠️ Results file is empty or only contains header"
+            @"
+        <!DOCTYPE html>
+        <html>
+        <body style="font-family: Arial, sans-serif; padding: 20px;">
+          <h1 style="color: orange;">⚠️ No Results</h1>
+          <p>Test ran but produced no results.</p>
+        </body>
+        </html>
+        "@ | Out-File -FilePath "email-report.html" -Encoding utf8
             exit 0
         }
         
+        # Calculate metrics
         $totalSamples = $content.Count - 1
-        
         $results = $content | Select-Object -Skip 1 | ForEach-Object {
             $fields = $_ -split ','
             if ($fields.Count -ge 8) {
@@ -156,44 +122,137 @@ jobs:
             }
         }
         
-        if ($results.Count -eq 0) {
-            Write-Host "⚠️ No valid results to parse"
-            exit 0
-        }
-        
         $successful = ($results | Where-Object { $_.Success }).Count
         $failed = ($results | Where-Object { -not $_.Success }).Count
-        $avgTime = ($results | Measure-Object -Property ResponseTime -Average).Average
+        $successRate = [math]::Round(($successful/$totalSamples)*100, 2)
+        $avgTime = [math]::Round(($results | Measure-Object -Property ResponseTime -Average).Average, 2)
         $maxTime = ($results | Measure-Object -Property ResponseTime -Maximum).Maximum
         $minTime = ($results | Measure-Object -Property ResponseTime -Minimum).Minimum
         
-        $summary = @"
-        ## 📊 Performance Test Results
+        $statusColor = if ($successRate -ge 95) { "#4CAF50" } elseif ($successRate -ge 80) { "#FF9800" } else { "#F44336" }
+        $statusIcon = if ($successRate -ge 95) { "✅" } elseif ($successRate -ge 80) { "⚠️" } else { "❌" }
         
-        | Metric | Value |
-        |--------|-------|
-        | 📝 Total Requests | $totalSamples |
-        | ✅ Successful | $successful |
-        | ❌ Failed | $failed |
-        | 📈 Success Rate | $([math]::Round(($successful/$totalSamples)*100, 2))% |
-        | ⏱️ Avg Response Time | $([math]::Round($avgTime, 2)) ms |
-        | ⚡ Min Response Time | $minTime ms |
-        | 🔥 Max Response Time | $maxTime ms |
-        "@
+        # Generate HTML email
+        @"
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <style>
+            body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 0; background: #f5f5f5; }
+            .container { max-width: 600px; margin: 20px auto; background: white; border-radius: 10px; overflow: hidden; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+            .header { background: $statusColor; color: white; padding: 30px; text-align: center; }
+            .header h1 { margin: 0; font-size: 28px; }
+            .content { padding: 30px; }
+            .metric { display: flex; justify-content: space-between; padding: 15px; margin: 10px 0; background: #f9f9f9; border-radius: 5px; border-left: 4px solid $statusColor; }
+            .metric-label { font-weight: bold; color: #666; }
+            .metric-value { font-size: 18px; color: #333; font-weight: bold; }
+            .footer { background: #f5f5f5; padding: 20px; text-align: center; color: #666; font-size: 12px; }
+            .link { display: inline-block; margin: 20px 0; padding: 12px 30px; background: #2196F3; color: white; text-decoration: none; border-radius: 5px; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="header">
+              <h1>$statusIcon Performance Test Report</h1>
+              <p>Run #${{ github.run_number }} - ${{ github.ref_name }}</p>
+            </div>
+            <div class="content">
+              <h2>📊 Test Results</h2>
+              
+              <div class="metric">
+                <span class="metric-label">📝 Total Requests</span>
+                <span class="metric-value">$totalSamples</span>
+              </div>
+              
+              <div class="metric">
+                <span class="metric-label">✅ Successful</span>
+                <span class="metric-value">$successful</span>
+              </div>
+              
+              <div class="metric">
+                <span class="metric-label">❌ Failed</span>
+                <span class="metric-value">$failed</span>
+              </div>
+              
+              <div class="metric">
+                <span class="metric-label">📈 Success Rate</span>
+                <span class="metric-value" style="color: $statusColor;">$successRate%</span>
+              </div>
+              
+              <div class="metric">
+                <span class="metric-label">⏱️ Avg Response Time</span>
+                <span class="metric-value">$avgTime ms</span>
+              </div>
+              
+              <div class="metric">
+                <span class="metric-label">⚡ Min Response Time</span>
+                <span class="metric-value">$minTime ms</span>
+              </div>
+              
+              <div class="metric">
+                <span class="metric-label">🔥 Max Response Time</span>
+                <span class="metric-value">$maxTime ms</span>
+              </div>
+              
+              <div style="text-align: center;">
+                <a href="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" class="link">
+                  View Full Report & Download HTML
+                </a>
+              </div>
+              
+              <p style="margin-top: 20px; padding: 15px; background: #E3F2FD; border-radius: 5px;">
+                <strong>📥 Note:</strong> The complete HTML report with detailed graphs and statistics is attached to this email as a ZIP file.
+              </p>
+            </div>
+            <div class="footer">
+              <p><strong>Repository:</strong> ${{ github.repository }}</p>
+              <p><strong>Branch:</strong> ${{ github.ref_name }}</p>
+              <p><strong>Triggered by:</strong> ${{ github.actor }}</p>
+              <p><strong>Commit:</strong> ${{ github.sha }}</p>
+            </div>
+          </div>
+        </body>
+        </html>
+        "@ | Out-File -FilePath "email-report.html" -Encoding utf8
         
-        $summary | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8
-        
+        Write-Host "✅ Email report generated"
         Write-Host "================================"
         Write-Host "📊 TEST SUMMARY"
         Write-Host "================================"
         Write-Host "Total Requests: $totalSamples"
         Write-Host "Successful: $successful"
         Write-Host "Failed: $failed"
-        Write-Host "Success Rate: $([math]::Round(($successful/$totalSamples)*100, 2))%"
-        Write-Host "Avg Response Time: $([math]::Round($avgTime, 2)) ms"
+        Write-Host "Success Rate: $successRate%"
+        Write-Host "Avg Response Time: $avgTime ms"
         Write-Host "================================"
 
-    - name: 📦 Upload HTML Report
+    - name: 📦 Zip HTML Report for Email
+      if: always()
+      shell: pwsh
+      run: |
+        if (Test-Path "html-report") {
+            Compress-Archive -Path "html-report\*" -DestinationPath "jmeter-report.zip" -Force
+            Write-Host "✅ HTML report zipped for email attachment"
+            $size = (Get-Item "jmeter-report.zip").Length / 1MB
+            Write-Host "Report size: $([math]::Round($size, 2)) MB"
+        }
+
+    - name: 📧 Send Email Report
+      if: always()
+      uses: dawidd6/action-send-mail@v3
+      with:
+        server_address: smtp.gmail.com
+        server_port: 587
+        username: ${{ secrets.EMAIL_USERNAME }}
+        password: ${{ secrets.EMAIL_PASSWORD }}
+        subject: "${{ env.RP_PROJECT }} Performance Test - Run #${{ github.run_number }}"
+        to: ${{ env.RECIPIENT_EMAIL }}
+        from: JMeter Bot <${{ secrets.EMAIL_USERNAME }}>
+        html_body: file://email-report.html
+        attachments: jmeter-report.zip
+        priority: normal
+
+    - name: 📦 Upload HTML Report (GitHub Artifacts)
       if: always()
       uses: actions/upload-artifact@v4
       with:
@@ -219,19 +278,3 @@ jobs:
         path: jmeter.log
         retention-days: 30
         if-no-files-found: warn
-
-    - name: 💬 Comment Test Results on PR
-      if: always() && github.event_name == 'pull_request' && hashFiles('results.jtl') != ''
-      uses: actions/github-script@v7
-      with:
-        script: |
-          const fs = require('fs');
-          if (fs.existsSync('results.jtl') && fs.existsSync(process.env.GITHUB_STEP_SUMMARY)) {
-            const summary = fs.readFileSync(process.env.GITHUB_STEP_SUMMARY, 'utf8');
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: summary
-            });
-          }
