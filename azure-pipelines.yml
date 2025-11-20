@@ -1,0 +1,59 @@
+trigger:
+  branches:
+    include:
+      - main
+      - master
+
+variables:
+  JMETER_VERSION: "5.6.3"
+  TEST_PLAN_PATH: "google-test-.jmx"
+  RP_PROJECT: "google-test-"
+  RECIPIENT_EMAILS: "maireda46@gmail.com;an2621559@gmail.com"
+
+jobs:
+  - job: performance_test
+    pool:
+      vmImage: "windows-latest"
+    steps:
+      - task: Checkout@v2
+
+      - task: JavaToolInstaller@0
+        inputs:
+          versionSpec: "11"
+          jdkArchitectureOption: "x64"
+          jdkSourceOption: "PreInstalled"
+
+      - script: |
+          echo "Downloading JMeter..."
+          curl -L https://archive.apache.org/dist/jmeter/binaries/apache-jmeter-$(JMETER_VERSION).zip -o jmeter.zip
+          powershell Expand-Archive -Path jmeter.zip -DestinationPath .
+        displayName: "Download JMeter"
+
+      - script: |
+          echo "Running JMeter Test..."
+          apache-jmeter-$(JMETER_VERSION)\bin\jmeter.bat -n -t $(TEST_PLAN_PATH) -l results.jtl -e -o html-report -j jmeter.log
+        displayName: "Run JMeter Performance Test"
+
+      - task: PublishBuildArtifacts@1
+        inputs:
+          pathToPublish: "html-report"
+          artifactName: "html-report"
+          publishLocation: "Container"
+
+      - powershell: |
+          $smtpServer = "smtp.gmail.com"
+          $smtpPort = 587
+          $username = "$(EMAIL_USERNAME)"  # يجب تخزينه في Azure DevOps Secrets
+          $password = "$(EMAIL_PASSWORD)"  # يجب تخزينه في Azure DevOps Secrets
+          $securePassword = ConvertTo-SecureString $password -AsPlainText -Force
+          $cred = New-Object System.Management.Automation.PSCredential($username, $securePassword)
+
+          $emails = "$(RECIPIENT_EMAILS)".Split(';')
+          $subject = "$(RP_PROJECT) Performance Test Completed"
+          $body = "<h1>Performance Test Completed</h1><p>Report is attached.</p>"
+
+          foreach ($email in $emails) {
+            Send-MailMessage -From $username -To $email -Subject $subject -BodyAsHtml $body -SmtpServer $smtpServer -Port $smtpPort -UseSsl -Credential $cred
+          }
+        displayName: "Send Email Notification"
+        condition: always()
